@@ -194,11 +194,23 @@ export function normalizeThrottleKey(key: string): string {
 /**
  * 组装限流键 `username|ip`（纯函数，便于测试）。
  *
- * IP 取值优先级：`cf-connecting-ip` > `x-forwarded-for` 首段 > `"unknown"`。
- * 经隧道的远程请求由 Cloudflare 注入 `cf-connecting-ip`，客户端伪造不了；
- * `x-forwarded-for` 客户端可随意伪造，仅在无 CF 头（局域网直连）时作为次选，
- * 且局域网本就不是本限流的主要威胁面。两部分均截断到 64 字符，
- * 避免攻击者用超长 username 放大单条桶的内存占用。
+ * IP 取值优先级：`cf-connecting-ip` > `x-forwarded-for` **最右段** > `"unknown"`。
+ *
+ * 为什么是最右而不是最左（2026-10-02 实机踩到，见下）：XFF 的每一段都由
+ * 「经过它的那一跳」追加，所以**最左那段是客户端自己写的**，攻击者每次换一个
+ * 假 IP 就换一个桶，锁定直接归零。旧注释的前提是「没有 CF 头 ⇒ 局域网直连 ⇒
+ * 不是威胁面」，这个前提在 Caddy/nginx 直挂域名时不成立：实例照样对公网开放，
+ * 只是前面换了个不注入 `cf-connecting-ip` 的反代。最右段由**我们自己的**那跳
+ * 反代追加，客户端写不进去，才是可信的最后一手。
+ *
+ * 三种部署形态都成立：
+ *  - Cloudflare Tunnel：`cf-connecting-ip` 由 CF 边缘覆写 → 走第一个分支；
+ *  - Caddy / nginx 反代：反代追加 XFF → 最右段 = 真实对端；
+ *  - 裸端口直连（不推荐）：没有反代追加，最右段仍是客户端伪造值，与取最左同样
+ *    不可信 —— 不因此变差；此时整个「局域网可信」模型本来就已失效，
+ *    该由部署层修，不该在这里假装能修。
+ *
+ * 两部分均截断到 64 字符，避免攻击者用超长 username 放大单条桶的内存占用。
  *
  * **不做 `toLowerCase()`**：账号查询是 `WHERE username = ?` 精确匹配
  * （SQLite/Postgres 皆然，`username text UNIQUE`），大小写敏感。若在此折叠大小写，
@@ -211,8 +223,13 @@ export function normalizeThrottleKey(key: string): string {
  */
 export function buildThrottleKey(headers: Headers, identity: string): string {
   const cfIp = headers.get("cf-connecting-ip")?.trim();
-  const xff = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const ip = boundedPart((cfIp || xff || "unknown").trim());
+  const hops = (headers.get("x-forwarded-for") ?? "")
+    .split(",")
+    .map((hop) => hop.trim())
+    .filter(Boolean);
+  // 从右往左取第一个非空段：hops 已滤掉空段，所以末元素即「最右的非空 hop」。
+  const rightmostHop = hops.length > 0 ? hops[hops.length - 1] : "";
+  const ip = boundedPart((cfIp || rightmostHop || "unknown").trim());
   const user = boundedPart(identity.trim());
   return `${user}|${ip}`;
 }

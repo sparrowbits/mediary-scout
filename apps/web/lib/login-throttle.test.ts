@@ -188,11 +188,29 @@ describe("buildThrottleKey", () => {
     expect(buildThrottleKey(h, "owner")).toBe("owner|203.0.113.7");
   });
 
-  it("falls back to the first x-forwarded-for hop, then to 'unknown'", () => {
-    expect(buildThrottleKey(new Headers({ "x-forwarded-for": "9.9.9.9, 8.8.8.8" }), "owner")).toBe(
-      "owner|9.9.9.9",
+  it("uses the RIGHTMOST x-forwarded-for hop, then 'unknown'", () => {
+    // 回归点：Caddy/nginx 直挂域名（没有 cf-connecting-ip）时，取最左段等于
+    // 让攻击者自己挑限流桶 —— 每换一个假 IP 就重置一次 5 次失败的额度。
+    // 最右段由我们自己的反代追加，客户端写不进去。
+    expect(
+      buildThrottleKey(new Headers({ "x-forwarded-for": "1.1.1.1, 2.2.2.2, 203.0.113.9" }), "owner"),
+    ).toBe("owner|203.0.113.9");
+    // 客户端伪造的 XFF 经过反代后变成「伪造值, 真实 IP」——必须落在真实 IP 上，
+    // 否则同一攻击者轮换 `X-Forwarded-For: <随机>` 就能无限重试。
+    expect(
+      buildThrottleKey(new Headers({ "x-forwarded-for": "9.9.9.9, 8.8.8.8" }), "owner"),
+    ).toBe("owner|8.8.8.8");
+    // 只有客户端自己写的那一段时也只能用它（没有可信的一跳可依赖），
+    // 但键仍随该值稳定，不会每次请求都换新桶……除非攻击者换值 —— 这正是
+    // 「裸端口直连不可用于公网」的原因，见 buildThrottleKey 的注释。
+    expect(buildThrottleKey(new Headers({ "x-forwarded-for": "7.7.7.7" }), "owner")).toBe(
+      "owner|7.7.7.7",
     );
     expect(buildThrottleKey(new Headers(), "owner")).toBe("owner|unknown");
+    // 尾随逗号/空段不能让键退化成 "unknown"（那会把所有远程请求并进一个桶）
+    expect(buildThrottleKey(new Headers({ "x-forwarded-for": "8.8.8.8, ," }), "owner")).toBe(
+      "owner|8.8.8.8",
+    );
   });
 
   it("trims but preserves username case so throttle identity matches login identity", () => {
