@@ -41,6 +41,10 @@ docs/original-skill-permission-audit-*.md
 docs/roadmap-self-host-expansion.md
 .vercel
 .env*
+# The template is meant to be published (README/docs tell users to copy it), so it
+# must not match the `.env*` rule above — otherwise `git ls-files -i -c` reports it
+# as a tracked-but-ignored file and the CI hygiene guard fails on a clean tree.
+!.env.example
 
 # 个人博客草稿(推广用,不进公共仓库)
 docs/blog/

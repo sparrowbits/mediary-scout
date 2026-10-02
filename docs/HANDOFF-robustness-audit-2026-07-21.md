@@ -2,7 +2,9 @@
 
 > 交接对象:接手的 AI 编码助手(opencode 等)。
 > 本文是「多轮 AI 迭代磨损了健壮性」这一担忧的一次系统审计产物 + 后续工作指令。
-> **动手前必读本文全文 + 下方「铁律」+ `docs/PROJECT-STATUS.md` 末尾快照。**
+> **动手前必读本文全文 + 下方「铁律」。** 快照文档 `docs/PROJECT-STATUS.md` 是维护者本地的未发布文件(`.gitignore`),外部接手方读不到 —— 里程碑状态以本文 §0 与 `release-notes/` 为准。
+
+> **状态更新(2026-10-02 复核)**:§2 Tier A(A1–A6)、§4 C3/C4/C5/C7/C8、§6 修复顺序里的全部条目均已合并;逐条代码位置见各节。§「审计剩余」里的 C9(热路径全表读老化)与孤儿 run 重试上限仍为已知低优先项。
 
 ## 0. 背景与当前状态
 
@@ -14,7 +16,7 @@ media-track(产品名 Mediary Scout):媒体资源自动获取/追踪产品。Nex
 - **PR #150**(`89c7bc6`):Wave1 — A1–A6 + B3 + proxy/C8 + C3/C7。
 - **PR #151**(`798a465`):Wave2 — B1/B2/B4 + C1/C2/C4–C6。
 - **PR #152**(`e105f89`):C10 夸克粘贴绑盘前 live-check（账号根 `"0"` + error cause）。
-- 全部已合并 main；实例 `media-router-tunnel` 已 `deploy.sh` 到 `e105f89`，真机 e2e 通过（health 200、页面 200、日志轮转、backup 脚本在位）。
+- 全部已合并 main；自部署实例已 `deploy.sh` 到 `e105f89`，真机 e2e 通过（health 200、页面 200、日志轮转、backup 脚本在位）。
 
 **审计剩余（低优先，勿当紧急）**: C9 热路径全表读老化；孤儿 run 重试上限；testPush SSRF（内网有限）。Tier D 仍勿修。**健壮性审计主线 A/B + 高价值 C 已收口。**
 
@@ -145,9 +147,9 @@ Code Reviewer / AI-Generated Code Security Auditor / Database Reliability Engine
 
 ## 9. 环境与运维备忘
 
-- **实例**:软路由,`ssh media-router-tunnel`(CF Tunnel,无 Access);app 在 `/mnt/nvme0n1-4/docker/mediary-scout`,`./scripts/deploy.sh` 发版(自校验 commit)。live 测应用:`ssh -fN -L 3399:localhost:3300 media-router-tunnel` 后打 `localhost:3399`(绕 CF Access,别加 ExitOnForwardFailure)。
-- **本项目的持久记忆**在 `~/.claude/projects/-Users-dirtyfancy-projects-media-track/memory/`(Claude Code 的记忆目录)。opencode 无法自动读——**关键记忆已在本文 §7/§8 蒸馏**;若需深挖某历史决策,让用户把对应 `.md` 贴给你。索引见该目录 `MEMORY.md`。
-- **状态快照**:`docs/PROJECT-STATUS.md` 末尾(每个里程碑追加一段)。
+- **实例**:每台自部署实例的主机名 / SSH 别名 / 部署路径都属于部署者自己,不写进公共仓库。发版走 `./scripts/deploy.sh`(自校验 `BUILD_COMMIT`);要绕过 CDN/Access 做真机验证,在本机建一条到容器端口的反向隧道后打 `localhost`:`ssh -fN -L <本地端口>:localhost:<WEB_PORT> <你的部署机 ssh 别名>`(不要加 `ExitOnForwardFailure`)。
+- **本项目的历史决策记忆**存在维护者本机(如 Claude Code 的项目记忆目录),不入库。opencode 等助手读不到——**关键结论已在本文 §7/§8 蒸馏**;若需深挖某历史决策,让维护者把对应 `.md` 贴过来。
+- **状态快照**:维护者本地的 `docs/PROJECT-STATUS.md`(gitignored,不入库),对公众以 `release-notes/` 为准。
 - CI job = `build-and-test`(typecheck + vitest + build:web)。vitest 600+。
 
 ---
