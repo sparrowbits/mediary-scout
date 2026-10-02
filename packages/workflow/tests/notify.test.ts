@@ -333,3 +333,73 @@ describe("buildNotifyMessage — rich per-channel push payload (L2)", () => {
     expect(msg.title).toBe("热辣滚烫 第 1 季");
   });
 });
+
+describe("dispatchNotifications fan-out", () => {
+  const note = {
+    id: "n-fanout",
+    workflowRunId: "r1",
+    kind: "episodes_restored",
+    title: "翘楚 episodes restored",
+    body: "2 episodes restored",
+    createdAt: "2026-06-13T00:00:00.000Z",
+  };
+
+  it("sends to every channel concurrently — a slow channel must not serialize the rest behind it", async () => {
+    const timeline: string[] = [];
+    const slow = createBarkChannel({
+      key: "slow",
+      fetchImpl: async () => {
+        timeline.push("slow:start");
+        // 真实世界里这一段是网络等待（上限 20s，见 DEFAULT_HTTP_TIMEOUT_MS）。
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        timeline.push("slow:end");
+        return { ok: true, status: 200 };
+      },
+    });
+    const fast = createWebhookChannel({
+      url: "https://hook.example.com/x",
+      fetchImpl: async () => {
+        timeline.push("fast:start");
+        return { ok: true, status: 200 };
+      },
+    });
+
+    const result = await dispatchNotifications({ channels: [slow, fast], notifications: [note] });
+
+    expect(timeline).toEqual(["slow:start", "fast:start", "slow:end"]);
+    expect(result.sent).toBe(1);
+    expect(result.failures).toEqual([]);
+  });
+
+  it("collects per-channel failures in channel order and still counts a partial delivery", async () => {
+    const dead = createServerChanChannel({
+      sendKey: "DEAD",
+      fetchImpl: async () => {
+        throw new Error("ECONNREFUSED");
+      },
+    });
+    const ok = createBarkChannel({ key: "k", fetchImpl: recordingFetch([]) });
+
+    const result = await dispatchNotifications({ channels: [dead, ok], notifications: [note] });
+
+    expect(result.sent).toBe(1);
+    expect(result.failures).toEqual([
+      { channelId: "serverchan", notificationId: "n-fanout", error: "ECONNREFUSED" },
+    ]);
+  });
+
+  it("does not deliver when every channel fails", async () => {
+    const deadA = createBarkChannel({ key: "k", fetchImpl: async () => ({ ok: false, status: 500 }) });
+    const deadB = createWebhookChannel({
+      url: "https://hook.example.com/x",
+      fetchImpl: async () => {
+        throw new Error("timeout");
+      },
+    });
+
+    const result = await dispatchNotifications({ channels: [deadA, deadB], notifications: [note] });
+
+    expect(result.sent).toBe(0);
+    expect(result.failures.map((failure) => failure.channelId)).toEqual(["bark", "webhook"]);
+  });
+});

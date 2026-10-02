@@ -296,17 +296,35 @@ export async function dispatchNotifications(input: {
       ? buildNotifyMessage(notification.report, input.opts)
       : { title: notification.title, text: notification.body };
     let delivered = false;
-    for (const channel of input.channels) {
-      try {
-        await channel.send(message);
+    // Fan out to every channel at once. Sequential sends meant one dead channel
+    // (its own connect timeout) pushed every later channel — and the whole
+    // worker tick — behind it, so a broken Bark key could delay the WeChat push
+    // by 20s. Semantics are unchanged: delivered = at least one channel accepted
+    // it, and failures are still collected in channel order (Promise.all keeps
+    // input order regardless of completion order).
+    const attempts = await Promise.all(
+      input.channels.map(async (channel) => {
+        try {
+          await channel.send(message);
+          return { channel, error: null as string | null };
+        } catch (error) {
+          return {
+            channel,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }),
+    );
+    for (const attempt of attempts) {
+      if (attempt.error === null) {
         delivered = true;
-      } catch (error) {
-        failures.push({
-          channelId: channel.id,
-          notificationId: notification.id,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        continue;
       }
+      failures.push({
+        channelId: attempt.channel.id,
+        notificationId: notification.id,
+        error: attempt.error,
+      });
     }
     if (delivered) {
       sent += 1;
@@ -330,9 +348,14 @@ export async function sendPushNotifications(input: {
 }): Promise<string[]> {
   const config: Record<string, string> = {};
 
-  for (const key of ["bark", "serverchan", "wecom", "webhook"]) {
+  const pushKeys = ["bark", "serverchan", "wecom", "webhook"] as const;
+  // Read the four settings concurrently: sequentially these are 4 round trips on
+  // the push path, and `pushNotificationsSince` calls this once per notification.
+  const dbValues = await Promise.all(pushKeys.map((key) => input.repository.getSetting(`push_${key}`)));
+
+  for (const [index, key] of pushKeys.entries()) {
     const override = input.overrideConfig?.[key];
-    const dbValue = await input.repository.getSetting(`push_${key}`);
+    const dbValue = dbValues[index] ?? null;
     const envKey =
       key === "bark"
         ? "MEDIA_TRACK_PUSH_BARK_KEY"
