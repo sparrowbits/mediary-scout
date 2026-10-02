@@ -33,6 +33,21 @@ export async function POST(request: NextRequest) {
     buildThrottleKey(request.headers, throttleIdentity),
   );
   if (!result.ok) {
+    // 限流命中不是「凭据不对」：回 429 + Retry-After，客户端才会真的退避，
+    // 而不是把 401 当成可无限重试的失败继续灌（也避免把「你被锁了」和
+    // 「密码错了」压成同一个状态码——前者该等，后者该改输入）。
+    if (typeof result.retryAfterSec === "number") {
+      return NextResponse.json(
+        { error: result.error },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(result.retryAfterSec),
+            "Cache-Control": "no-store",
+          },
+        },
+      );
+    }
     return NextResponse.json({ error: result.error }, { status: 401 });
   }
   const response = NextResponse.json({ ok: true });

@@ -60,6 +60,9 @@ describe("loginAccount throttling (integration)", () => {
       const locked = await rt.loginAccount("owner1", "wrong-password");
       expect(locked.ok).toBe(false);
       if (!locked.ok) expect(locked.error).toContain("尝试过于频繁");
+      // 限流分支必须带上退避秒数，路由才回得成 429 + Retry-After；
+      // 缺了它，「你被锁了」会退化成和「密码错了」同一个 401。
+      if (!locked.ok) expect(locked.retryAfterSec).toBeGreaterThan(0);
 
       // 锁定期间正确密码同样被挡
       const blocked = await rt.loginAccount("owner1", "password-123");

@@ -163,7 +163,9 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 export type AuthOutcome =
   | { ok: true; accountId: string; signedCookie: string }
-  | { ok: false; error: string };
+  // `retryAfterSec` 只由限流分支填：调用方据此回 429 + Retry-After，
+  // 而不是把「请退避」和「密码错了」混成同一个状态码。
+  | { ok: false; error: string; retryAfterSec?: number };
 
 /** Create a session row + signed httpOnly cookie value for an account. */
 async function createLoginSession(accountId: string): Promise<string> {
@@ -240,7 +242,11 @@ export async function loginAccount(
   const now = Date.now();
   const verdict = checkLoginAllowed(key, now);
   if (!verdict.allowed) {
-    return { ok: false, error: `尝试过于频繁，请 ${verdict.retryAfterSec} 秒后再试。` };
+    return {
+      ok: false,
+      error: `尝试过于频繁，请 ${verdict.retryAfterSec} 秒后再试。`,
+      retryAfterSec: verdict.retryAfterSec,
+    };
   }
   // 账号缺失时也要走完整验密，否则耗时差异会泄露账号是否存在
   // （空 hash 会在 verifyPassword 的格式校验处提前 return，所以必须给一个真格式的 hash）。

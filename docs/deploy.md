@@ -374,6 +374,39 @@ Public Hostname 与 Access 已由 Connect 控制面配好，服务目标固定�
 - **两个队列触发端点**（`/api/workflows/run-next`、`/api/workflows/run-type3`）是给外部 cron 用的，它们会真的执行获取（调网盘 API、往盘里写文件）。门禁：设了 `MEDIA_TRACK_WORKER_SECRET` 就必须带对 header（带对了不限流）；**没设**时只有「非 force」的 ping 免密放行，且受 30 次/分钟限流，`?force=1`（绕过每日巡检时间门）无 secret 一律 401。容器内的进程内 worker 不走 HTTP，所以**单机自部署可以不设**。要跑外部 crontab / 多实例，就设上：`openssl rand -hex 32` 写进 `.env`，crontab 侧同名环境变量（`scripts/scheduler.mjs` 会自动带上 header）。
 - 想多人合用同一实例(各绑各的网盘、各看各的库):设环境变量 `MEDIA_TRACK_MULTI_USER=1` 开多用户模式(出注册 / 登录页)。即便开了多用户,也仍建议放在 Tailscale / Access 之后。
 
+### 用自己的反代直挂域名（Caddy / nginx）——两条硬性要求
+
+不走 Tailscale / Cloudflare Tunnel，而是拿本机已有的 Caddy（或 nginx）把域名直接反代到
+`web:3000`，是可以的，但**必须**满足下面两条，否则等于把管理后台裸挂公网。这两条都不是
+理论推演，是 2026-10-02 一次真实 Caddy 部署里踩到的：
+
+1. **反代必须给请求打上一个「我是外部入口」的标记头。**
+   应用判定「远程请求」只看 `cf-ray` / `cdn-loop` / `cf-connecting-ip` 三个头
+   （见 `apps/web/proxy.ts`）——**三个都没有就按局域网直通、免登录**。Cloudflare Tunnel
+   天然会带，而 Caddy / nginx 默认一个都不带，于是经你反代进来的公网访客会被当成
+   「坐在家里局域网的人」，无需任何凭据就能读写全部数据（网盘凭据、LLM key、媒体库）。
+   Caddy 侧最小写法（放在 `reverse_proxy` 块里）：
+
+   ```
+   reverse_proxy web:3000 {
+       header_up cdn-loop "my-edge"   # 值随意，存在即视为外部入口
+   }
+   ```
+
+   方向是安全的：访客自己伪造这个头只会让自己**更**受限（被要求登录），不会放宽。
+   另外记得**先把访问密码设好**再挂域名——未设密码时 `/login` 提供「设置访问密码」表单，
+   谁先到谁认领。宿主机上用 `docker compose exec web node scripts/reset-password.mjs default`
+   可以直接生成一个。
+
+2. **反代必须把真实客户端 IP 追加进 `X-Forwarded-For`（而不是替换、更不能让客户端自填）。**
+   登录防爆破的限流键取 `cf-connecting-ip`，没有该头时取 **XFF 最右段**——最右段是
+   「我们自己的那一跳」追加的，客户端写不进去；最左段是客户端自己写的。所以
+   Caddy（默认追加）与 `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`
+   都可以，而把 XFF **整体覆盖成客户端带来的值**（或干脆不经过反代裸暴露端口）会让
+   攻击者每次请求换一个假 IP、也就换一个限流桶，5 次失败锁定永久归零。
+   裸端口直连时应用无从得知真实对端（Node 侧只看得见头），这种情况任何头都不可信，
+   请在部署层解决：要么上反代，要么上 Tailscale。
+
 ## 多用户与忘记密码
 
 默认单用户、无登录。想让家人 / 朋友合用同一台实例(各绑各的网盘、各看各的库、互相看不见):
@@ -508,4 +541,3 @@ gunzip -c backups/mediatrack-YYYYMMDD-HHMMSS.sql.gz \
 ```
 
 把 `backups/` 目录同步到机外（对象存储 / NAS / 另一台机器）再算真正有备份。
-
