@@ -5,6 +5,17 @@ description: "Resource tracking and acquisition workflow for media resources. MU
 
 # clawd-media-track Skill
 
+> ⚠️ **DEPRECATED / 已废弃（2026-10 起归档）**
+>
+> 这是 **Python 版**技能：让外部 agent 直接 `import scripts/pan115_client.py`、手填 CID、自己调 `flatten_directory()`。
+> 它已被 **TS V2 sandbox 引擎**取代：同样的证据规则、Type 1/2/3 语义、去重与字幕纪律，全部翻译进
+> [`packages/workflow/src/acquisition-v2/skill.ts`](../../../packages/workflow/src/acquisition-v2/skill.ts)，
+> 由 `packages/workflow/src/acquisition-v2/sandbox.ts` 以工具句柄强制执行（agent 拿不到 raw URL / cid / 凭证）。
+>
+> **不要照本文件行事**：文中的 `./.venv/bin/python`、`requirements.txt`、`SAFETY_VIOLATION` 路径都不再受任何测试或 CI 覆盖。
+> 现在对外的 agent 操作面只有 [`skills/mediary-scout/SKILL.md`](../../../skills/mediary-scout/SKILL.md)（本地 HTTP API）。
+> 保留原因与逐条对照见 [docs/legacy/README.md](../README.md)。
+
 ## FIRST ACTIONS (MANDATORY)
 
 Before any clawd-media-track reasoning or tool use:

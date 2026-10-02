@@ -2,6 +2,20 @@
 
 > 生成日期：2026-06-30
 > 基于代码库当前 `main` 分支
+>
+> ## ⚠️ 这是一份**历史快照**，不是当前架构文档
+>
+> 骨架（sandbox / force-reread / agent loop / 队列 + 可恢复状态）至今成立，读它仍然值。以下部分**已过期**，以代码为准：
+>
+> | 章节 | 快照里的说法 | 现在（2026-10） |
+> |---|---|---|
+> | §4.4 品牌表 | 3 家（115/夸克/光鸭） | **5 家**：+ 123、天翼（`packages/workflow/src/storage-brands.ts:21` `StorageProvider`）；磁力仅 115/光鸭/123 |
+> | §三 结构树 | 根目录 `SKILL.md` + `references/`、`tests/` Python 单测 | 已归档到 [`docs/legacy/`](legacy/README.md)（Python 技能被 V2 sandbox 取代）；根 `SKILL.md` 不复存在 |
+> | §二 技术栈 | Next.js 15 | Next.js 16 + React 19；Node ≥22.13 |
+> | §五 Sandbox | 八层 hard guards | guard 更多（替换请求三重一致性、受保护文件、中字兜底、系统性阻断停手等），逐条以 `acquisition-v2/sandbox.ts` 为准 |
+> | 全文缺失 | — | **SQLite 后端**（桌面版 `sqlite.ts`）、**agent memory**（`agent-memory.ts`，title/global）、**字幕落地**（assrt + `transferSubtitleUrl/Urls` 能力门）、**replace_request / staging_recovery** 两种 run kind、**updater 一键自更新 + 每日自动更新**、**Agent HTTP API**（`skills/mediary-scout` + [agent-api.md](agent-api.md)）、**Mediary Connect**（`workers/scout-connect`，付费远程访问控制面）、**掉线冻结/重绑恢复**（`storage-auth-error.ts`） |
+>
+> 当前面向读者的入口是 [架构速览](architecture.md)；产品/工作流取舍见 [workflow-product-architecture.md](workflow-product-architecture.md)。
 
 ## 一、项目定位
 
@@ -66,9 +80,12 @@ mediary-scout/
 │   └── tests/
 ├── workers/tmdb-proxy/     # CF Worker TMDB 代理
 ├── scripts/                # 运维脚本/调研探针 (30+个)
-├── tests/                  # Python 单元测试 (unittest: pan115/pansou/tmdb client、分页、DB)
 ├── docs/                   # 文档
-├── references/             # SKILL 引用手册 (Agent 技能文档)
+│   └── legacy/             # 已归档的 Python 技能 + 其 unittest（不参与 CI）
+├── skills/mediary-scout/   # 对外的 agent 操作面 skill（走本地 HTTP Agent API）
+├── workers/scout-connect/  # Mediary Connect：远程访问控制面（CF Worker + D1）
+├── updater/                # 一键自更新 sidecar（唯一能操作 Docker 的服务）
+├── release-notes/          # 人话更新日志（发布 tag = vYYYY.MM.DD[.N]）
 ├── docker-compose.yml      # 自部署编排
 └── Dockerfile              # 单容器构建
 ```

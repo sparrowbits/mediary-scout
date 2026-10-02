@@ -1,14 +1,19 @@
-# OpenClaw Type 3 Example
+# OpenClaw Type 3 Example（已废弃 · 历史留档）
+
+> ⚠️ 本文件描述的是 **Python 版 `clawd-media-track` 技能**（直接调 `scripts/*_client.py`、手填 CID）。
+> 该技能已被 TS V2 sandbox 引擎取代，仓库根不再有 `SKILL.md` / `references/`。
+> 现在对外唯一有效的 agent 操作面是 [`skills/mediary-scout/SKILL.md`](../../../skills/mediary-scout/SKILL.md)（走本地 HTTP API）；
+> 为什么这里的内容还留着，见 [docs/legacy/README.md](../README.md)。
 
 This file is an example host prompt for running Type 3 scheduled monitoring in an OpenClaw-style agent environment.
 
 It is not the source of truth for the workflow.
-The source of truth remains:
+The source of truth *at the time* was:
 
-- [SKILL.md](../SKILL.md)
-- [references/02-global-constraints.md](../references/02-global-constraints.md)
-- [references/03-methods-reference.md](../references/03-methods-reference.md)
-- [references/07-type3-checklist.md](../references/07-type3-checklist.md)
+- [SKILL.md](./SKILL.md)
+- [references/02-global-constraints.md](./references/02-global-constraints.md)
+- [references/03-methods-reference.md](./references/03-methods-reference.md)
+- [references/07-type3-checklist.md](./references/07-type3-checklist.md)
 
 Use this example when wiring a scheduled Type 3 job into a host agent that supports cron or recurring execution.
 
