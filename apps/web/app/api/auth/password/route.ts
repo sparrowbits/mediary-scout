@@ -6,6 +6,7 @@ import {
   setSingleUserPassword,
   clearSingleUserPassword,
   requireAuthenticatedAccountId,
+  UnauthenticatedAccountError,
 } from "../../../../lib/workflow-runtime";
 
 /**
@@ -38,8 +39,26 @@ export async function POST(request: NextRequest) {
 
   // 已设密码 → 后续变更必须已认证。状态读不出来（"unknown"）时同样要求认证，
   // 宁可让本地用户多登录一次，也不能让远程匿名请求清掉密码。
+  //
+  // 这里必须自己把 UnauthenticatedAccountError 翻成 401，不能让它冒到框架：
+  // 默认冒上去是 500，而「域名一挂公网，扫描器打这里 → 500」正是实机踩到的
+  // 场景（2026-10-02 mediary.sparrowzz.com 上线当天，access log 里就有
+  // 匿名 POST /api/auth/password）。判定本身是 fail-closed 的，写没发生，
+  // 但状态码把「你没登录」说成了「服务器坏了」：客户端无法区分该重试还是该去
+  // 登录，设置页也只会吐一个天书错误。同一族的 /api/settings/attention/dismiss
+  // 早就显式返回 401，这里保持一致。
   if ((await hasLoginPassword()) !== false) {
-    await requireAuthenticatedAccountId();
+    try {
+      await requireAuthenticatedAccountId();
+    } catch (error) {
+      if (error instanceof UnauthenticatedAccountError) {
+        return NextResponse.json(
+          { error: error.message },
+          { status: 401, headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      throw error;
+    }
   }
 
   if (body.clear === true) {
@@ -54,4 +73,3 @@ export async function POST(request: NextRequest) {
   }
   return NextResponse.json({ ok: true, passwordSet: true });
 }
-
