@@ -12,6 +12,7 @@ vi.mock("../../../../lib/workflow-runtime", () => ({
 
 import { GET, POST } from "./route";
 import { runNextQueuedWorkflow } from "../../../../lib/workflow-runtime";
+import { _resetWorkerRateLimitForTest, _setWorkerRateLimitForTest } from "../../../../lib/worker-rate-limit";
 
 function request(method: "GET" | "POST", secret?: string) {
   return new NextRequest("http://localhost/api/workflows/run-next", {
@@ -26,6 +27,7 @@ describe("/api/workflows/run-next", () => {
     vi.stubEnv("MEDIA_TRACK_DEMO_MODE", "");
     vi.stubEnv("MEDIA_TRACK_MULTI_USER", "");
     vi.stubEnv("MEDIA_TRACK_WORKER_SECRET", "");
+    _resetWorkerRateLimitForTest();
   });
 
   afterEach(() => vi.unstubAllEnvs());
@@ -71,5 +73,20 @@ describe("/api/workflows/run-next", () => {
 
     expect(response.status).toBe(200);
     expect(runNextQueuedWorkflow).toHaveBeenCalledOnce();
+  });
+
+  // The compat path above is exactly the hole the audit flagged: it must stay usable
+  // by a same-host cron (15s cadence) while an anonymous hammer gets 429, not more work.
+  it("rate-limits secretless cron pings past the window budget", async () => {
+    _setWorkerRateLimitForTest({ limitPerWindow: 3 });
+
+    for (let i = 0; i < 3; i += 1) {
+      expect((await GET(request("GET"))).status).toBe(200);
+    }
+    const denied = await GET(request("GET"));
+
+    expect(denied.status).toBe(429);
+    expect(denied.headers.get("retry-after")).toBeTruthy();
+    expect(runNextQueuedWorkflow).toHaveBeenCalledTimes(3);
   });
 });

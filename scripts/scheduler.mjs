@@ -14,7 +14,10 @@
 //
 // Env:
 //   MEDIA_TRACK_BASE_URL                default http://localhost:3000
-//   MEDIA_TRACK_WORKER_SECRET           sent as x-media-track-worker-secret if set
+//   MEDIA_TRACK_WORKER_SECRET           sent as x-media-track-worker-secret. OPTIONAL for the
+//                                       gated pings below, but REQUIRED for anything forced
+//                                       (?force=1) and recommended: without it the endpoints
+//                                       fall back to a 30/min fixed-window rate limit (429).
 //   MEDIA_TRACK_RUN_NEXT_INTERVAL_MS    default 15000   (drain acquisition queue)
 //   MEDIA_TRACK_TYPE3_PING_INTERVAL_MS  default 600000  (ping the gated sweep, 10m)
 //   MEDIA_TRACK_SCHEDULER_ONCE          "1" → run both once and exit (cron-friendly)
@@ -31,11 +34,29 @@ function ts() {
   return new Date().toISOString().slice(11, 19);
 }
 
+// A rejection here means the queue is NOT draining, so a user's "获取" just sits at
+// 排队 — print the reason and the fix instead of a bare status code.
+function explainRejection(path, result) {
+  const status = result.status;
+  if (result.error) return `[${ts()}] ${path} unreachable: ${result.error}`;
+  const hint = result.body?.hint ?? result.body?.error ?? "";
+  if (status === 401 && !SECRET) {
+    return `[${ts()}] ${path} → 401 ${hint} （未配 MEDIA_TRACK_WORKER_SECRET：免密只放行非 force 的常规 ping）`;
+  }
+  if (status === 403) {
+    return `[${ts()}] ${path} → 403 ${hint} （demo 实例只读，不该由 cron 驱动）`;
+  }
+  if (status === 429) {
+    return `[${ts()}] ${path} → 429 免密触发超出窗口配额（retry-after=${result.headers?.get?.("retry-after") ?? result.body?.retryAfterSec ?? "?"}s）。设 MEDIA_TRACK_WORKER_SECRET 可解除限流`;
+  }
+  return `[${ts()}] ${path} error: ${hint || status}`;
+}
+
 async function post(path) {
   try {
     const res = await fetch(BASE + path, { method: "POST", headers });
     const body = await res.json().catch(() => ({}));
-    return { ok: res.ok, status: res.status, body };
+    return { ok: res.ok, status: res.status, headers: res.headers, body };
   } catch (error) {
     return { ok: false, error: error?.message ?? String(error) };
   }
@@ -50,7 +71,7 @@ async function drainQueue() {
     for (let i = 0; i < 50; i += 1) {
       const result = await post("/api/workflows/run-next");
       if (!result.ok) {
-        console.log(`[${ts()}] run-next error: ${result.error ?? result.status}`);
+        console.log(explainRejection("/api/workflows/run-next", result));
         return;
       }
       if (result.body?.status === "idle") return;
@@ -70,7 +91,7 @@ async function pingSweep() {
   try {
     const result = await post("/api/workflows/run-type3");
     if (!result.ok) {
-      console.log(`[${ts()}] run-type3 error: ${result.error ?? result.status}`);
+      console.log(explainRejection("/api/workflows/run-type3", result));
       return;
     }
     if (result.body?.skipped) {
@@ -97,6 +118,11 @@ async function main() {
   console.log(
     `[${ts()}] scheduler → ${BASE} (run-next every ${NEXT_INTERVAL}ms, sweep ping every ${TYPE3_PING_INTERVAL}ms; sweep time set in Settings)`,
   );
+  if (!SECRET) {
+    console.log(
+      `[${ts()}] 提示：未设 MEDIA_TRACK_WORKER_SECRET — 免密 ping 受 30/min 限流，?force=1 会被 401 拒绝。`,
+    );
+  }
   await drainQueue();
   await pingSweep();
   setInterval(drainQueue, NEXT_INTERVAL);

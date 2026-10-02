@@ -371,6 +371,7 @@ Public Hostname 与 Access 已由 Connect 控制面配好，服务目标固定�
 
 - 本项目只走**自部署**,作者不托管(见 [distribution-and-legal-positioning.md](distribution-and-legal-positioning.md))。默认单用户、无登录。
 - **别在公网裸暴露 `:3000`**。要远程用就走上面的 Tailscale(私有)或 Cloudflare Tunnel + Access(带鉴权)。
+- **两个队列触发端点**（`/api/workflows/run-next`、`/api/workflows/run-type3`）是给外部 cron 用的，它们会真的执行获取（调网盘 API、往盘里写文件）。门禁：设了 `MEDIA_TRACK_WORKER_SECRET` 就必须带对 header（带对了不限流）；**没设**时只有「非 force」的 ping 免密放行，且受 30 次/分钟限流，`?force=1`（绕过每日巡检时间门）无 secret 一律 401。容器内的进程内 worker 不走 HTTP，所以**单机自部署可以不设**。要跑外部 crontab / 多实例，就设上：`openssl rand -hex 32` 写进 `.env`，crontab 侧同名环境变量（`scripts/scheduler.mjs` 会自动带上 header）。
 - 想多人合用同一实例(各绑各的网盘、各看各的库):设环境变量 `MEDIA_TRACK_MULTI_USER=1` 开多用户模式(出注册 / 登录页)。即便开了多用户,也仍建议放在 Tailscale / Access 之后。
 
 ## 多用户与忘记密码

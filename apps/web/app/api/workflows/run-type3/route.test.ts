@@ -12,6 +12,7 @@ vi.mock("../../../../lib/workflow-runtime", () => ({
 
 import { GET, POST } from "./route";
 import { runScheduledType3 } from "../../../../lib/workflow-runtime";
+import { _resetWorkerRateLimitForTest } from "../../../../lib/worker-rate-limit";
 
 function request(method: "GET" | "POST", options?: { secret?: string; force?: boolean }) {
   const url = new URL("http://localhost/api/workflows/run-type3");
@@ -28,6 +29,7 @@ describe("/api/workflows/run-type3", () => {
     vi.stubEnv("MEDIA_TRACK_DEMO_MODE", "");
     vi.stubEnv("MEDIA_TRACK_MULTI_USER", "");
     vi.stubEnv("MEDIA_TRACK_WORKER_SECRET", "");
+    _resetWorkerRateLimitForTest();
   });
 
   afterEach(() => vi.unstubAllEnvs());
@@ -66,6 +68,15 @@ describe("/api/workflows/run-type3", () => {
 
     expect(response.status).toBe(200);
     expect(runScheduledType3).toHaveBeenCalledWith({ force: true });
+  });
+
+  // `?force=1` skips the once-per-Beijing-day gate, so it is the one trigger an
+  // anonymous caller must never get: 401 unless the worker secret is presented.
+  it("401s an anonymous forced sweep instead of bypassing the daily gate", async () => {
+    const response = await GET(request("GET", { force: true }));
+
+    expect(response.status).toBe(401);
+    expect(runScheduledType3).not.toHaveBeenCalled();
   });
 
   it("preserves secretless single-user cron compatibility", async () => {
